@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+coverage/
+out/
+cache/
+artifacts/
+.env
+*.log
+frontend/profiles.local.js

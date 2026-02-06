@@ -1,0 +1,17 @@
+{
+  "name": "cadmos-panic-recovery-open",
+  "version": "1.0.0",
+  "private": false,
+  "license": "MIT",
+  "description": "Open-source emergency recovery toolkit for Cadmos users",
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 8080 -d frontend",
+    "generate": "node --experimental-strip-types ./scripts/generateRecoveryPayloads.ts ./scripts/recovery-config.example.json",
+    "check:frontend": "node --check ./frontend/app.js",
+    "build:contracts": "forge build"
+  },
+  "dependencies": {
+    "viem": "^2.24.3"
+  }
+}
