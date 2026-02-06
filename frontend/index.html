@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cadmos Emergency Recovery</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <img class="hero-logo" src="./assets/CADMOS%20logo-01.svg" alt="Cadmos logo" />
+        <p class="eyebrow">Self-Custody Recovery</p>
+        <h1>Emergency Recovery Wizard</h1>
+        <p class="lede">
+          Use this page only if the Cadmos app or services are unavailable. This tool prepares and submits on-chain recovery transactions from your signatory wallet. Your assets remain in your control at all times - you review and sign every step.
+        </p>
+        <div class="hero-actions">
+          <button id="connectBtn" class="btn btn-primary">1. Connect signatory wallet</button>
+          <span id="walletBadge" class="badge">Not connected</span>
+        </div>
+        <p class="security-note">Security note: never share your seed phrase. This page will never ask for it.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Emergency Checklist</h2>
+        <ol class="checklist">
+          <li><strong>Verify you are on the official recovery page URL</strong> (bookmark it now). Avoid links from DMs or ads.</li>
+          <li>Use a <strong>secure device</strong> (preferably a personal computer) and, if possible, a <strong>hardware wallet</strong>.</li>
+          <li>In your wallet, select <strong>Arbitrum One (42161)</strong>.</li>
+          <li>Ensure your <strong>signatory wallet has enough gas</strong> for multiple signatures + at least one recovery transaction.</li>
+          <li><strong>Connect your signatory wallet</strong> - recovered assets will be sent to this same address by default.</li>
+          <li>Paste your <strong>Cadmos Smart Account address</strong> (your Cadmos wallet address, <em>not</em> a token address).</li>
+          <li>(Optional) Add <strong>extra token addresses</strong> only if you believe something is missing from the profile list.</li>
+          <li>Click <strong>Scan &amp; Build Plan</strong>, then <strong>review the plan carefully</strong> (destination, token list, amounts).</li>
+          <li>Click <strong>Recover Now</strong> and <strong>approve/sign prompts in order</strong>. Do not skip steps.</li>
+          <li>If a step fails, use the fallback exports (<strong>Copy plan (JSON) / Copy calldata</strong>) to execute manually in Etherscan or another explorer.</li>
+        </ol>
+        <p class="security-note">If you are unsure at any step, stop and double-check the wallet address + network before signing.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Protocol Profile (Read-only)</h2>
+        <div class="meta-row">
+          <span id="chainBadge" class="badge">Chain: Not detected</span>
+          <span id="profileBadge" class="badge">Profile: Not loaded</span>
+        </div>
+        <div id="chainWarning" class="warning-banner hidden-section">
+          Stop: wallet network does not match Arbitrum One (42161). Switch network before proceeding.
+        </div>
+        <div class="grid two-col">
+          <label>
+            RecoveryController (from profile - verify this matches your network)
+            <input id="controllerInput" readonly />
+          </label>
+          <label>
+            Cadmos Token/Vault (from profile - verify before signing)
+            <input id="cadmosInput" readonly />
+          </label>
+        </div>
+        <p class="warning-text">If these addresses look unfamiliar or do not match your expected network, do not proceed.</p>
+        <label>
+          Known tokens (from profile)
+          <textarea id="knownTokensView" rows="3" readonly></textarea>
+        </label>
+      </section>
+
+      <section class="panel">
+        <h2>Recovery Inputs</h2>
+        <div class="grid two-col">
+          <label>
+            Cadmos Smart Account (your Cadmos wallet address)
+            <input id="walletInput" placeholder="0x..." />
+            <p class="help">This is the wallet address shown in Cadmos (Smart Account). Do not paste a token contract address.</p>
+          </label>
+          <label>
+            Signatory (connected wallet - also used as destination)
+            <input id="signatoryInput" readonly placeholder="0x..." />
+            <p class="help">Recovered assets are transferred here by default. Change this only if you know what you are doing.</p>
+          </label>
+          <label>
+            Signature deadline (seconds - increase if you expect delays)
+            <input id="deadlineInput" type="number" min="120" value="3600" />
+          </label>
+          <label>
+            Recovery Mode
+            <select id="modeInput">
+              <option value="standard">Standard (recommended - automatic scan + withdraw + transfers)</option>
+              <option value="manual">Manual fallback (advanced - use overrides if scanning fails)</option>
+            </select>
+          </label>
+          <label class="inline">
+            Continue if a token fails (recommended)
+            <input id="continueOnFailureInput" type="checkbox" checked />
+          </label>
+          <label class="inline">
+            Include vault redeem fallback (standard mode)
+            <input id="includeRedeemFallbackInput" type="checkbox" checked />
+          </label>
+        </div>
+
+        <label>
+          Extra token addresses (optional - one per line)
+          <textarea id="extraTokensInput" rows="4" placeholder="0xTokenA\n0xTokenB"></textarea>
+        </label>
+
+        <div id="manualSection" class="hidden-section">
+          <div class="grid two-col">
+            <label>
+              Manual Cadmos vault amount (0 = auto max withdraw)
+              <input id="cadmosManualAmountInput" value="0" />
+            </label>
+          </div>
+          <label>
+            Manual token overrides (optional - one per line: token,amount in smallest units)
+            <textarea id="tokenOverridesInput" rows="4" placeholder="0xTokenA,1000000"></textarea>
+          </label>
+        </div>
+
+        <label class="inline">
+          I confirm the network + destination address are correct, and I understand I am responsible for what I sign.
+          <input id="confirmReviewInput" type="checkbox" />
+        </label>
+
+        <div class="action-row">
+          <button id="scanBtn" class="btn">2. Scan & Build Plan</button>
+          <button id="recoverBtn" class="btn btn-primary" disabled>3. Recover Now</button>
+          <button id="copyJsonBtn" class="btn">Copy plan (JSON)</button>
+          <button id="downloadJsonBtn" class="btn">Download plan (JSON)</button>
+          <button id="copyCalldataBtn" class="btn">Copy calldata (manual execution)</button>
+        </div>
+        <p class="help">You may see multiple signature/transaction prompts. Read each prompt before approving.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Output</h2>
+        <div class="meta-row">
+          <span id="nonceBadge" class="badge">Smart Account nonce: N/A</span>
+        </div>
+        <pre id="output">Connect your signatory wallet, paste your Cadmos Smart Account address, then click "Scan & Build Plan".
+
+Before recovering, review:
+- Network
+- Destination address
+- Token list + amounts
+- Number of steps
+
+Only proceed if everything looks correct.</pre>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
