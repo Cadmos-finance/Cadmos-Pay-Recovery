@@ -35,9 +35,3 @@ Cadmos `UserWallet` nonces are sequential. Signatures must be produced in this e
 2. ERC20 direct `transfer` call for each token in order
 
 If order changes, nonces mismatch and execution fails.
-
-## Why Adapter + Controller
-
-- Controller is safe to verify publicly and can be used directly from Etherscan.
-- Direct mode removes approval steps and adapter dependency.
-- True on-chain privacy is not provided; this is only light interface obscurity.
