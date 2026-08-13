@@ -9,7 +9,8 @@ This repo contains:
 
 - `contracts/RecoveryController.sol` — main on-chain executor
 - `contracts/RecoveryAdapter.sol` — adapter helper (deploy first)
-- `frontend/` — static recovery UI (no backend required)
+- `frontend/` — recovery UI source (no backend required)
+- `dist/` — self-contained, content-hashed production build
 - `scripts/` — offline payload/signature generation script
 
 ---
@@ -37,20 +38,32 @@ This repo contains:
 
 ## Quick Start (Frontend)
 
-1. Configure addresses in `frontend/profiles.js`:
+1. Install the exact locked dependencies:
+
+```bash
+npm ci
+```
+
+2. Configure addresses in `frontend/profiles.js`:
    - `controller`
    - `cadmosToken`
    - `knownTokens`
 
-2. Run:
+3. Build and serve the self-contained production files:
 
 ```bash
-cd frontend
-python3 -m http.server 8080
+npm run serve
 ```
-3. Open http://localhost:8080.
+
+4. Open http://localhost:8080.
 
 Follow the on-page checklist and review the plan output before executing.
+
+The production page does not load JavaScript, styles, or fonts from third parties.
+`viem` is installed from the pinned lockfile and compiled into a content-hashed local
+bundle. `dist/build-manifest.json` records the bundle path, SHA-256 digest, and bundled
+`viem` version. Commit the generated `dist/` files with every frontend release so the
+static deployment always has a reviewed artifact.
 
 ---
 
@@ -103,6 +116,7 @@ forge build
 ## Tests
 
 ```bash
+npm test
 forge test
 ```
 
@@ -127,6 +141,8 @@ Current coverage focus:
 - Never commit or share private keys or seed phrases.
 
 - This repo is designed to work without requiring any Cadmos backend.
+
+- `npm test` rejects remote module imports and cross-origin page resources.
 
 ---
 

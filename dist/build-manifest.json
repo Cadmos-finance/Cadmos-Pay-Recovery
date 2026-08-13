@@ -1,0 +1,7 @@
+{
+  "bundle": "assets/app-4SGFBUL3.js",
+  "sha256": "623b728a57c15943f386e48f71edd668c3e76ddd7f8916b7a937006873eb0c08",
+  "dependencies": {
+    "viem": "2.55.15"
+  }
+}

@@ -7,7 +7,7 @@ import {
   getAddress,
   isAddress,
   parseAbi,
-} from "https://esm.sh/viem@2.24.3";
+} from "viem";
 import { CADMOS_PROFILES } from "./profiles.js";
 
 const walletAbi = parseAbi(["function nonce() view returns (uint256)"]);
