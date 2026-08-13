@@ -94,10 +94,24 @@ Configure `profiles.js` with real production values:
 
 You can keep `profiles.example.js` as the template.
 
+Build from the repository root and commit the generated `dist/` artifact:
+
+```bash
+npm ci
+npm test
+```
+
+The build bundles the exact lockfile version of `viem`, rejects remote module imports,
+and emits a content-hashed script plus its SHA-256 digest in
+`dist/build-manifest.json`. The production page must not load third-party executable,
+style, or font resources.
+
 ---
 
 ## Run Locally
 
 ```bash
-cd frontend
-python3 -m http.server 8080
+npm run serve
+```
+
+Then open http://localhost:8080.

@@ -2,6 +2,10 @@
   main = "worker.js"
   compatibility_date = "2026-02-06"
 
+  [build]
+  command = "npm run build:frontend"
+  watch_dir = ["frontend", "scripts"]
+
   [assets]
-  directory = "./frontend"
+  directory = "./dist"
   binding = "ASSETS"
