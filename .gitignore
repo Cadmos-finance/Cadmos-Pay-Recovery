@@ -7,3 +7,5 @@ artifacts/
 .env
 *.log
 frontend/profiles.local.js
+scripts/recovery-config.json
+scripts/*.local.json

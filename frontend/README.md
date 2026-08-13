@@ -61,8 +61,9 @@ Everything else is driven by the on-chain protocol profile.
 
 ## If a Recovery Transaction Fails
 
-- Re-generate the plan/signatures if the Smart Account **nonce** or balances changed.
-- Use **Copy JSON** or **Copy Calldata** to execute via a block explorer (manual fallback).
+- Stop and regenerate the plan against the Smart Account's live **nonce** and balances.
+- Do not reuse previously exported typed data after a failure or state change.
+- A vault, nonce, or token read error blocks plan generation; it is never interpreted as a zero balance.
 
 ---
 
@@ -78,9 +79,16 @@ Everything else is driven by the on-chain protocol profile.
 
 ---
 
-## Explorer / Etherscan Fallback
+## Unsigned Review and Hardware-Wallet Export
 
-Use **Copy JSON**, **Copy Calldata**, or **Download JSON** to execute manually via a block explorer if needed.
+**Copy unsigned plan** and **Download unsigned plan** never request signatures and
+cannot move funds. The plan lists every discovered operation, but only `nextStep` is
+bound to the current live nonce. **Copy next-step typed data** exports that one EIP-712
+request for review or signing with a trusted external tool.
+
+Submit at most that one operation, then regenerate. The normal **Recover Now** flow
+already follows this rule by reading the live nonce, signing, and submitting each
+operation individually.
 
 ---
 

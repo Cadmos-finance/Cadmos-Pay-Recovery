@@ -1,6 +1,6 @@
 {
   "rpcUrl": "https://arb1.arbitrum.io/rpc",
-  "privateKey": "0xYOUR_PRIVATE_KEY",
+  "chainId": 42161,
   "wallet": "0x1111111111111111111111111111111111111111",
   "signatory": "0x2222222222222222222222222222222222222222",
   "controller": "0x4444444444444444444444444444444444444444",
