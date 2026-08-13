@@ -8,6 +8,10 @@ import {
   isAddress,
   parseAbi,
 } from "viem";
+import {
+  createUnsignedRecoveryPlan,
+  requiredRead,
+} from "../shared/recoveryPlanning.mjs";
 import { CADMOS_PROFILES } from "./profiles.js";
 
 const walletAbi = parseAbi(["function nonce() view returns (uint256)"]);
@@ -61,8 +65,6 @@ const state = {
   chainId: null,
   profile: null,
   scannedPlan: null,
-  generated: null,
-  generatedFingerprint: null,
 };
 
 const els = {
@@ -94,7 +96,7 @@ const els = {
   recoverBtn: document.getElementById("recoverBtn"),
   copyJsonBtn: document.getElementById("copyJsonBtn"),
   downloadJsonBtn: document.getElementById("downloadJsonBtn"),
-  copyCalldataBtn: document.getElementById("copyCalldataBtn"),
+  copyTypedDataBtn: document.getElementById("copyTypedDataBtn"),
 
   output: document.getElementById("output"),
 };
@@ -128,10 +130,8 @@ function syncRecoverButtonState() {
   els.recoverBtn.disabled = !state.account || !els.confirmReviewInput.checked;
 }
 
-function clearGeneratedState() {
+function clearPlanState() {
   state.scannedPlan = null;
-  state.generated = null;
-  state.generatedFingerprint = null;
 }
 
 async function enforceExpectedChain(publicClient) {
@@ -171,22 +171,6 @@ function parseChainIdValue(value) {
 
 function bigintReplacer(_, value) {
   return typeof value === "bigint" ? value.toString() : value;
-}
-
-function inputFingerprint() {
-  return JSON.stringify({
-    wallet: els.walletInput.value.trim(),
-    deadline: els.deadlineInput.value.trim(),
-    mode: els.modeInput.value,
-    continueOnFailure: els.continueOnFailureInput.checked,
-    includeRedeemFallback: els.includeRedeemFallbackInput.checked,
-    extraTokens: els.extraTokensInput.value,
-    cadmosManualAmount: els.cadmosManualAmountInput.value.trim(),
-    tokenOverrides: els.tokenOverridesInput.value,
-    chainId: state.chainId,
-    profileController: state.profile?.controller ?? "",
-    profileCadmosToken: state.profile?.cadmosToken ?? "",
-  });
 }
 
 function parseAddress(label, value) {
@@ -270,14 +254,6 @@ function clients() {
     publicClient: createPublicClient({ transport, chain: ARBITRUM_CHAIN }),
     walletClient: createWalletClient({ transport, chain: ARBITRUM_CHAIN }),
   };
-}
-
-async function safeRead(fn, fallback) {
-  try {
-    return await fn();
-  } catch {
-    return fallback;
-  }
 }
 
 function resolveProfile(chainId) {
@@ -392,7 +368,7 @@ async function connectWallet() {
   state.account = getAddress(account);
   state.chainId = chainId;
   state.profile = resolveProfile(chainId);
-  clearGeneratedState();
+  clearPlanState();
 
   els.signatoryInput.value = state.account;
   els.walletBadge.textContent = `Connected: ${state.account.slice(0, 6)}...${state.account.slice(-4)}`;
@@ -446,18 +422,21 @@ async function buildUnsignedPlan() {
     if (!tokenSet.has(token)) tokenSet.set(token, "MANUAL");
   }
 
-  const currentNonce = await publicClient.readContract({
-    address: wallet,
-    abi: walletAbi,
-    functionName: "nonce",
-  });
+  const currentNonce = await requiredRead("UserWallet nonce", () =>
+    publicClient.readContract({
+      address: wallet,
+      abi: walletAbi,
+      functionName: "nonce",
+    }),
+  );
 
   const deadline = BigInt(Math.floor(Date.now() / 1000)) + deadlineSeconds;
 
   const calls = [];
   const notes = [];
 
-  const maxWithdraw = await safeRead(
+  const maxWithdraw = await requiredRead(
+    "Cadmos maxWithdraw",
     () =>
       publicClient.readContract({
         address: state.profile.cadmosToken,
@@ -465,12 +444,11 @@ async function buildUnsignedPlan() {
         functionName: "maxWithdraw",
         args: [wallet],
       }),
-    0n
   );
 
   const withdrawAssets =
     mode === "manual" && manualCadmosAmount > 0n
-      ? (maxWithdraw > 0n ? min(manualCadmosAmount, maxWithdraw) : manualCadmosAmount)
+      ? min(manualCadmosAmount, maxWithdraw)
       : maxWithdraw;
 
   if (withdrawAssets > 0n) {
@@ -488,7 +466,8 @@ async function buildUnsignedPlan() {
   }
 
   if (mode === "standard" && includeRedeemFallback) {
-    const maxRedeem = await safeRead(
+    const maxRedeem = await requiredRead(
+      "Cadmos maxRedeem",
       () =>
         publicClient.readContract({
           address: state.profile.cadmosToken,
@@ -496,7 +475,6 @@ async function buildUnsignedPlan() {
           functionName: "maxRedeem",
           args: [wallet],
         }),
-      0n
     );
 
     if (maxRedeem > 0n) {
@@ -515,7 +493,8 @@ async function buildUnsignedPlan() {
   }
 
   for (const [token, source] of tokenSet.entries()) {
-    const balance = await safeRead(
+    const balance = await requiredRead(
+      `token balance ${token}`,
       () =>
         publicClient.readContract({
           address: token,
@@ -523,7 +502,6 @@ async function buildUnsignedPlan() {
           functionName: "balanceOf",
           args: [wallet],
         }),
-      0n
     );
 
     const override = manualOverrides.get(token);
@@ -563,86 +541,6 @@ async function buildUnsignedPlan() {
   };
 }
 
-async function signPlan(plan) {
-  const { walletClient } = clients();
-
-  setOutput(`Signing ${plan.calls.length} message(s). Confirm each signature in wallet...`);
-
-  const signedCalls = [];
-
-  for (let i = 0; i < plan.calls.length; i++) {
-    const requestNonce = plan.currentNonce + BigInt(i);
-    const call = plan.calls[i];
-
-    setOutput(`Signing message ${i + 1}/${plan.calls.length}: ${call.note}`);
-
-    const signature = await walletClient.signTypedData({
-      account: state.account,
-      domain: {
-        name: "Cadmos UserWallet",
-        version: "1",
-        chainId: plan.chainId,
-        verifyingContract: plan.wallet,
-      },
-      types: {
-        Request: [
-          { name: "target", type: "address" },
-          { name: "value", type: "uint256" },
-          { name: "deadline", type: "uint256" },
-          { name: "nonce", type: "uint256" },
-          { name: "data", type: "bytes" },
-        ],
-      },
-      primaryType: "Request",
-      message: {
-        target: call.target,
-        value: 0n,
-        deadline: call.deadline,
-        nonce: requestNonce,
-        data: call.data,
-      },
-    });
-
-    signedCalls.push({
-      target: call.target,
-      signatory: plan.signatory,
-      data: call.data,
-      signature,
-      deadline: call.deadline,
-      nonce: requestNonce,
-      note: call.note,
-    });
-  }
-
-  const callTuples = signedCalls.map((c) => ({
-    target: c.target,
-    signatory: c.signatory,
-    data: c.data,
-    signature: c.signature,
-    deadline: c.deadline,
-  }));
-
-  const executeCalldata = encodeFunctionData({
-    abi: controllerAbi,
-    functionName: "executeSignedCalls",
-    args: [plan.wallet, callTuples, plan.continueOnFailure],
-  });
-
-  return {
-    chainId: plan.chainId,
-    controller: plan.controller,
-    wallet: plan.wallet,
-    continueOnFailure: plan.continueOnFailure,
-    mode: plan.mode,
-    walletNonce: plan.currentNonce,
-    destination: plan.destination,
-    calls: signedCalls,
-    callTuples,
-    callPlanNotes: plan.notes,
-    executeSignedCallsCalldata: executeCalldata,
-  };
-}
-
 function renderPlanPreview(plan) {
   els.nonceBadge.textContent = `Smart Account nonce: ${plan.currentNonce.toString()}`;
 
@@ -667,59 +565,16 @@ function renderPlanPreview(plan) {
   setOutput(reviewHeader + JSON.stringify(preview, bigintReplacer, 2));
 }
 
-function renderGenerated(bundle) {
-  const out = {
-    chainId: bundle.chainId,
-    controller: bundle.controller,
-    wallet: bundle.wallet,
-    destination: bundle.destination,
-    continueOnFailure: bundle.continueOnFailure,
-    mode: bundle.mode,
-    walletNonce: bundle.walletNonce.toString(),
-    callPlanNotes: bundle.callPlanNotes,
-    calls: bundle.calls.map((c) => ({
-      target: c.target,
-      signatory: c.signatory,
-      data: c.data,
-      signature: c.signature,
-      deadline: c.deadline.toString(),
-      nonce: c.nonce.toString(),
-      note: c.note,
-    })),
-    executeSignedCallsCalldata: bundle.executeSignedCallsCalldata,
-  };
-
-  const reviewHeader =
-    `Signed recovery bundle ready:\n` +
-    `Network: ${bundle.chainId}\n` +
-    `Destination: ${bundle.destination}\n` +
-    `Signed calls: ${bundle.calls.length}\n\n`;
-
-  setOutput(reviewHeader + JSON.stringify(out, null, 2));
-}
-
 async function scanPlan() {
   const plan = await buildUnsignedPlan();
-  clearGeneratedState();
   state.scannedPlan = plan;
   renderPlanPreview(plan);
 }
 
-async function ensureGenerated() {
-  const fingerprint = inputFingerprint();
-  if (state.generated && state.generatedFingerprint === fingerprint) {
-    return state.generated;
-  }
-
+async function exportUnsignedPlan() {
   const plan = await buildUnsignedPlan();
-  const bundle = await signPlan(plan);
-
   state.scannedPlan = plan;
-  state.generated = bundle;
-  state.generatedFingerprint = fingerprint;
-
-  renderGenerated(bundle);
-  return bundle;
+  return createUnsignedRecoveryPlan(plan);
 }
 
 async function recoverNow() {
@@ -751,11 +606,13 @@ async function recoverNow() {
       continue;
     }
 
-    const liveNonce = await publicClient.readContract({
-      address: plan.wallet,
-      abi: walletAbi,
-      functionName: "nonce",
-    });
+    const liveNonce = await requiredRead("live UserWallet nonce", () =>
+      publicClient.readContract({
+        address: plan.wallet,
+        abi: walletAbi,
+        functionName: "nonce",
+      }),
+    );
 
     setOutput(
       `Executing step ${i + 1}/${plan.calls.length}\n` +
@@ -868,76 +725,38 @@ async function recoverNow() {
 }
 
 async function copyJson() {
-  const bundle = await ensureGenerated();
-
-  const payload = {
-    chainId: bundle.chainId,
-    controller: bundle.controller,
-    wallet: bundle.wallet,
-    destination: bundle.destination,
-    continueOnFailure: bundle.continueOnFailure,
-    mode: bundle.mode,
-    walletNonce: bundle.walletNonce.toString(),
-    callPlanNotes: bundle.callPlanNotes,
-    calls: bundle.calls.map((c) => ({
-      target: c.target,
-      signatory: c.signatory,
-      data: c.data,
-      signature: c.signature,
-      deadline: c.deadline.toString(),
-      nonce: c.nonce.toString(),
-      note: c.note,
-    })),
-    executeSignedCallsCalldata: bundle.executeSignedCallsCalldata,
-  };
-
-  await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-  setOutput("Copied plan (JSON) to clipboard.");
+  const plan = await exportUnsignedPlan();
+  await navigator.clipboard.writeText(JSON.stringify(plan, bigintReplacer, 2));
+  setOutput("Copied unsigned recovery plan. It contains no signatures and cannot move funds.");
 }
 
-async function copyCalldata() {
-  const bundle = await ensureGenerated();
-  await navigator.clipboard.writeText(bundle.executeSignedCallsCalldata);
-  setOutput("Copied calldata for manual execution.");
+async function copyNextStepTypedData() {
+  const plan = await exportUnsignedPlan();
+  await navigator.clipboard.writeText(
+    JSON.stringify(plan.nextStep.typedData, bigintReplacer, 2),
+  );
+  setOutput(
+    "Copied unsigned typed data for the next step only. Regenerate after signing or executing it.",
+  );
 }
 
 async function downloadJson() {
-  const bundle = await ensureGenerated();
-
-  const payload = {
-    chainId: bundle.chainId,
-    controller: bundle.controller,
-    wallet: bundle.wallet,
-    destination: bundle.destination,
-    continueOnFailure: bundle.continueOnFailure,
-    mode: bundle.mode,
-    walletNonce: bundle.walletNonce.toString(),
-    callPlanNotes: bundle.callPlanNotes,
-    calls: bundle.calls.map((c) => ({
-      target: c.target,
-      signatory: c.signatory,
-      data: c.data,
-      signature: c.signature,
-      deadline: c.deadline.toString(),
-      nonce: c.nonce.toString(),
-      note: c.note,
-    })),
-    executeSignedCallsCalldata: bundle.executeSignedCallsCalldata,
-  };
-
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const plan = await exportUnsignedPlan();
+  const blob = new Blob([JSON.stringify(plan, bigintReplacer, 2)], {
+    type: "application/json",
+  });
   const now = new Date().toISOString().replace(/[:.]/g, "-");
 
   const a = document.createElement("a");
   const href = URL.createObjectURL(blob);
   a.href = href;
-  a.download = `cadmos-panic-recovery-${now}.json`;
+  a.download = `cadmos-unsigned-recovery-plan-${now}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(href);
 
-  setOutput("Downloaded plan (JSON).");
+  setOutput("Downloaded unsigned recovery plan. It contains no signatures and cannot move funds.");
 }
 
 function withErrors(fn) {
@@ -985,7 +804,7 @@ els.scanBtn.addEventListener("click", withErrors(scanPlan));
 els.recoverBtn.addEventListener("click", withErrors(recoverNow));
 els.copyJsonBtn.addEventListener("click", withErrors(copyJson));
 els.downloadJsonBtn.addEventListener("click", withErrors(downloadJson));
-els.copyCalldataBtn.addEventListener("click", withErrors(copyCalldata));
+els.copyTypedDataBtn.addEventListener("click", withErrors(copyNextStepTypedData));
 
 if (window.ethereum?.on) {
   window.ethereum.on("chainChanged", (nextChainHex) => {
@@ -996,7 +815,7 @@ if (window.ethereum?.on) {
       state.chainId = null;
     }
 
-    clearGeneratedState();
+    clearPlanState();
     if (state.chainId === DEFAULT_CHAIN_ID) {
       try {
         state.profile = resolveProfile(state.chainId);
@@ -1016,7 +835,7 @@ if (window.ethereum?.on) {
   });
 
   window.ethereum.on("accountsChanged", (accounts) => {
-    clearGeneratedState();
+    clearPlanState();
     if (!accounts || accounts.length === 0) {
       state.account = null;
       state.chainId = null;

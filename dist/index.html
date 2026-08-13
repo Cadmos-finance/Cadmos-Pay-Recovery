@@ -34,7 +34,7 @@
           <li>(Optional) Add <strong>extra token addresses</strong> only if you believe something is missing from the profile list.</li>
           <li>Click <strong>Scan &amp; Build Plan</strong>, then <strong>review the plan carefully</strong> (destination, token list, amounts).</li>
           <li>Click <strong>Recover Now</strong> and <strong>approve/sign prompts in order</strong>. Do not skip steps.</li>
-          <li>If a step fails, use the fallback exports (<strong>Copy plan (JSON) / Copy calldata</strong>) to execute manually in Etherscan or another explorer.</li>
+          <li>If a step fails, stop and regenerate against the live wallet nonce. Unsigned exports are for independent review and cannot be broadcast.</li>
         </ol>
         <p class="security-note">If you are unsure at any step, stop and double-check the wallet address + network before signing.</p>
       </section>
@@ -86,7 +86,7 @@
             Recovery Mode
             <select id="modeInput">
               <option value="standard">Standard (recommended - automatic scan + withdraw + transfers)</option>
-              <option value="manual">Manual fallback (advanced - use overrides if scanning fails)</option>
+              <option value="manual">Manual limits (advanced - cap successfully scanned balances)</option>
             </select>
           </label>
           <label class="inline">
@@ -107,7 +107,7 @@
         <div id="manualSection" class="hidden-section">
           <div class="grid two-col">
             <label>
-              Manual Cadmos vault amount (0 = auto max withdraw)
+              Manual Cadmos vault cap (0 = full scanned max withdraw)
               <input id="cadmosManualAmountInput" value="0" />
             </label>
           </div>
@@ -125,11 +125,11 @@
         <div class="action-row">
           <button id="scanBtn" class="btn">2. Scan & Build Plan</button>
           <button id="recoverBtn" class="btn btn-primary" disabled>3. Recover Now</button>
-          <button id="copyJsonBtn" class="btn">Copy plan (JSON)</button>
-          <button id="downloadJsonBtn" class="btn">Download plan (JSON)</button>
-          <button id="copyCalldataBtn" class="btn">Copy calldata (manual execution)</button>
+          <button id="copyJsonBtn" class="btn">Copy unsigned plan (JSON)</button>
+          <button id="downloadJsonBtn" class="btn">Download unsigned plan (JSON)</button>
+          <button id="copyTypedDataBtn" class="btn">Copy next-step typed data</button>
         </div>
-        <p class="help">You may see multiple signature/transaction prompts. Read each prompt before approving.</p>
+        <p class="help">Recover Now signs and submits one live-nonce operation at a time. Exported plans contain no signatures; regenerate after every submitted or failed operation.</p>
       </section>
 
       <section class="panel">
@@ -149,6 +149,6 @@ Only proceed if everything looks correct.</pre>
       </section>
     </main>
 
-    <script type="module" src="./assets/app-4SGFBUL3.js"></script>
+    <script type="module" src="./assets/app-GBS556OW.js"></script>
   </body>
 </html>

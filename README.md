@@ -11,7 +11,7 @@ This repo contains:
 - `contracts/RecoveryAdapter.sol` — adapter helper (deploy first)
 - `frontend/` — recovery UI source (no backend required)
 - `dist/` — self-contained, content-hashed production build
-- `scripts/` — offline payload/signature generation script
+- `scripts/` — secret-free unsigned recovery planner
 
 ---
 
@@ -32,7 +32,7 @@ This repo contains:
 - Recover to their **signatory wallet address** (destination = connected signatory).
 - Recover **Cadmos vault assets** + **ERC-20 balances**.
 - Add extra token addresses manually if the profile list is incomplete.
-- Use an explorer fallback (e.g., Etherscan) via exported calldata/JSON.
+- Export an unsigned plan or the next operation's EIP-712 typed data for independent review.
 
 ---
 
@@ -69,19 +69,29 @@ static deployment always has a reviewed artifact.
 
 ## Quick Start (Script)
 
-1. Install dependencies:
+1. Install the exact locked dependencies:
 
 ```bash
-npm install
+npm ci
 ```
 
-2. Edit scripts/recovery-config.example.json.
-
-3. Generate payloads:
+2. Copy `scripts/recovery-config.example.json` to an ignored local file and configure
+   the public addresses. The configuration never contains a private key:
 
 ```bash
-npm run generate
+cp scripts/recovery-config.example.json scripts/recovery-config.json
 ```
+
+3. Generate an unsigned plan. Only the selected operation is bound to the current
+   live wallet nonce:
+
+```bash
+npm run generate -- ./scripts/recovery-config.json --step 0
+```
+
+The CLI never signs or broadcasts. Sign `nextStep.typedData` with a trusted external
+or hardware wallet, submit only that operation, then regenerate before the next step.
+Any failed RPC, nonce, vault, or token read aborts plan generation.
 
 ---
 
@@ -136,13 +146,17 @@ Current coverage focus:
 
 - Always verify chain + contract addresses before signing.
 
-- If nonce or balances change, regenerate signatures.
+- After any submitted or failed operation, regenerate against the live nonce and balances.
 
 - Never commit or share private keys or seed phrases.
 
 - This repo is designed to work without requiring any Cadmos backend.
 
 - `npm test` rejects remote module imports and cross-origin page resources.
+
+- Plan exports are unsigned. The UI signs and submits one live-nonce operation at a time.
+
+- Vault and token read failures block recovery planning instead of being treated as zero balances.
 
 ---
 

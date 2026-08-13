@@ -4,7 +4,7 @@
 
   [build]
   command = "npm run build:frontend"
-  watch_dir = ["frontend", "scripts"]
+  watch_dir = ["frontend", "shared", "scripts"]
 
   [assets]
   directory = "./dist"
