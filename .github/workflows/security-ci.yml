@@ -32,7 +32,7 @@ jobs:
         run: npm ci
 
       - name: Audit dependencies
-        run: npm audit --audit-level=high --registry=https://registry.npmjs.org
+        run: npm audit --audit-level=moderate --registry=https://registry.npmjs.org
 
       - name: Test and build frontend
         run: npm test
@@ -51,20 +51,3 @@ jobs:
 
       - name: Test contracts
         run: forge test
-
-  dependency-review:
-    name: Dependency review
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Review dependency changes
-        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
-        with:
-          fail-on-severity: moderate
-          comment-summary-in-pr: never

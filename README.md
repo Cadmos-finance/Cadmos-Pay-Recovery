@@ -135,8 +135,8 @@ forge test
 ```
 
 Pull requests and changes to `master` run these checks in GitHub Actions. CI also
-audits dependencies, verifies that rebuilding does not change the committed `dist/`
-artifact, and reviews dependency changes introduced by pull requests.
+audits the complete locked dependency tree at moderate severity or higher and verifies
+that rebuilding does not change the committed `dist/` artifact.
 
 ---
 
