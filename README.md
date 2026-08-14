@@ -88,6 +88,25 @@ The Cloudflare Worker applies the recovery Content Security Policy and the remai
 browser security headers in code. HTML and the build manifest use `no-store`; only
 content-hashed assets receive immutable caching.
 
+`wrangler.toml` sets `run_worker_first = true`. Cloudflare otherwise serves any request
+matching a file in `dist/` straight from the static asset layer without invoking
+`worker.js`, so the recovery page and its bundle would be published with none of these
+headers while the Worker ran only on the not-found path.
+
+Deploying is not the same as being protected. After every deployment, verify the live
+response headers against the reviewed policy:
+
+```bash
+npm run check:deployment
+```
+
+The check reads `dist/build-manifest.json`, requests the page, manifest, content-hashed
+bundle, stylesheet, and a not-found path, and fails if any response is missing a security
+header or carries the wrong cache policy. It defaults to the production host and accepts
+an alternative base URL as its first argument. `.github/workflows/deployment-check.yml`
+runs the same check daily and on demand. It is deliberately excluded from `npm test` so
+pull-request CI stays hermetic.
+
 ---
 
 ## Quick Start (Script)
@@ -159,6 +178,10 @@ Pull requests and changes to `master` run these checks in GitHub Actions. CI als
 audits the complete locked dependency tree at moderate severity or higher and verifies
 that rebuilding does not change the committed `dist/` artifact.
 
+`npm test` covers the delivery policy and the Worker routing that policy depends on, but
+it cannot observe production. Run `npm run check:deployment` against the live host after
+every deployment.
+
 ---
 
 Current coverage focus:
@@ -182,6 +205,9 @@ Current coverage focus:
 - This repo is designed to work without requiring any Cadmos backend.
 
 - `npm test` rejects remote module imports and cross-origin page resources.
+
+- A green build does not prove the live site is hardened. `npm run check:deployment`
+  is the only check that reads what users actually receive.
 
 - Plan exports are unsigned. The UI signs and submits one live-nonce operation at a time.
 

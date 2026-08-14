@@ -13,7 +13,8 @@
     "build:frontend": "node ./scripts/buildFrontend.mjs",
     "serve": "npm run build:frontend && python3 -m http.server 8080 -d dist",
     "generate": "node ./scripts/generateRecoveryPlan.mjs",
-    "check:frontend": "npm run build:frontend && node --test ./test/frontend-build.test.mjs ./test/recovery-planning-safety.test.mjs ./test/recovery-verification.test.mjs ./test/worker-security.test.mjs",
+    "check:frontend": "npm run build:frontend && node --test ./test/frontend-build.test.mjs ./test/recovery-planning-safety.test.mjs ./test/recovery-verification.test.mjs ./test/worker-security.test.mjs ./test/worker-routing.test.mjs ./test/deployment-verification.test.mjs",
+    "check:deployment": "node ./scripts/checkDeployedSecurity.mjs",
     "test": "npm run check:frontend",
     "build:contracts": "forge build"
   },

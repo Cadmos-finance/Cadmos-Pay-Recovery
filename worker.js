@@ -11,7 +11,7 @@ const CONTENT_SECURITY_POLICY = [
   "form-action 'none'",
 ].join("; ");
 
-const SECURITY_HEADERS = {
+export const SECURITY_HEADERS = {
   "Content-Security-Policy": CONTENT_SECURITY_POLICY,
   "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
   "X-Content-Type-Options": "nosniff",
@@ -25,7 +25,7 @@ const SECURITY_HEADERS = {
 
 const CONTENT_HASHED_ASSET = /^\/assets\/[^/]+-[a-z0-9]{8,}\.[a-z0-9]+$/i;
 
-function cacheControlFor(request, response) {
+export function cacheControlFor(request, response) {
   const { pathname } = new URL(request.url);
   const contentType = response.headers.get("content-type") ?? "";
 
