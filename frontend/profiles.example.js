@@ -1,8 +1,9 @@
-// Fill with production addresses before release.
+// Pinned Arbitrum One production profile. Change only through a reviewed release.
 export const CADMOS_PROFILES = {
   "42161": {
     chainName: "Arbitrum One",
     controller: "0xEd092dE12cD5c2CbfDE051b42Fad5d27567DF01d",
+    controllerCodeHash: "0x7f48f74ed39fe889bbb83c7b6a2244cc8e3d7a0cb370fd1c3b32b215d6bbb62e",
     cadmosToken: "0x5449C9576f42eBBCA54e984c40597a1197267079",
     knownTokens: [
       { symbol: "USDT", address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9" },

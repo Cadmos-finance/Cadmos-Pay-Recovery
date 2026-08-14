@@ -30,6 +30,14 @@ test("an exported plan binds only the selected operation to the live nonce", () 
     {
       chainId: 42161,
       controller: "0x4444444444444444444444444444444444444444",
+      controllerCodeHash: `0x${"ab".repeat(32)}`,
+      contractChecks: {
+        controller: {
+          address: "0x4444444444444444444444444444444444444444",
+          codeHash: `0x${"ab".repeat(32)}`,
+          pinned: true,
+        },
+      },
       wallet: "0x1111111111111111111111111111111111111111",
       signatory: "0x2222222222222222222222222222222222222222",
       destination: "0x2222222222222222222222222222222222222222",
@@ -58,6 +66,8 @@ test("an exported plan binds only the selected operation to the live nonce", () 
   assert.equal(exported.nextStep.index, 1);
   assert.equal(exported.nextStep.typedData.message.nonce, 17n);
   assert.equal(exported.nextStep.typedData.message.data, "0xbbbb");
+  assert.equal(exported.controllerCodeHash, `0x${"ab".repeat(32)}`);
+  assert.equal(exported.contractChecks.controller.pinned, true);
   assert.equal("signature" in exported.nextStep, false);
   assert.equal("executeSignedCallsInput" in exported, false);
 });
@@ -79,6 +89,26 @@ test("an unsigned export rejects an operation outside the current live plan", ()
         1,
       ),
     /outside the current plan \(0-0\)/,
+  );
+});
+
+test("an unsigned export requires a verified pinned controller identity", () => {
+  assert.throws(
+    () =>
+      createUnsignedRecoveryPlan({
+        chainId: 42161,
+        controller: "0x4444444444444444444444444444444444444444",
+        controllerCodeHash: `0x${"ab".repeat(32)}`,
+        calls: [
+          {
+            target: "0x6666666666666666666666666666666666666666",
+            data: "0xaaaa",
+            deadline: 2_000_000_000n,
+            note: "withdraw",
+          },
+        ],
+      }),
+    /verified, pinned RecoveryController identity/,
   );
 });
 

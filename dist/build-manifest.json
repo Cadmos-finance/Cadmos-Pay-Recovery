@@ -1,6 +1,6 @@
 {
-  "bundle": "assets/app-GBS556OW.js",
-  "sha256": "7d281fec5f58733c43748463ed91016189177445f2a8ad78e932da321cc39905",
+  "bundle": "assets/app-CC6VAHWT.js",
+  "sha256": "c26b5502cb0f87bd4b30f7f9e8f5c00184bdf3cc00632d1d0c2b187f282797c1",
   "dependencies": {
     "viem": "2.55.15"
   }

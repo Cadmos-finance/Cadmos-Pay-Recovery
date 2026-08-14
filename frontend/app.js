@@ -12,6 +12,13 @@ import {
   createUnsignedRecoveryPlan,
   requiredRead,
 } from "../shared/recoveryPlanning.mjs";
+import {
+  assertErc20TransferSimulation,
+  assertSingleCallSimulation,
+  evaluateOperationPostcondition,
+  requiredVerification,
+  verifyRecoveryContracts,
+} from "../shared/recoveryVerification.mjs";
 import { CADMOS_PROFILES } from "./profiles.js";
 
 const walletAbi = parseAbi(["function nonce() view returns (uint256)"]);
@@ -76,6 +83,7 @@ const els = {
   chainWarning: document.getElementById("chainWarning"),
 
   controllerInput: document.getElementById("controllerInput"),
+  controllerCodeHashInput: document.getElementById("controllerCodeHashInput"),
   cadmosInput: document.getElementById("cadmosInput"),
   knownTokensView: document.getElementById("knownTokensView"),
 
@@ -86,6 +94,7 @@ const els = {
   continueOnFailureInput: document.getElementById("continueOnFailureInput"),
   includeRedeemFallbackInput: document.getElementById("includeRedeemFallbackInput"),
   extraTokensInput: document.getElementById("extraTokensInput"),
+  confirmUnknownTokensInput: document.getElementById("confirmUnknownTokensInput"),
 
   manualSection: document.getElementById("manualSection"),
   cadmosManualAmountInput: document.getElementById("cadmosManualAmountInput"),
@@ -132,6 +141,15 @@ function syncRecoverButtonState() {
 
 function clearPlanState() {
   state.scannedPlan = null;
+}
+
+function invalidatePlanReview({ resetUnknownTokenAcknowledgement = false } = {}) {
+  clearPlanState();
+  els.confirmReviewInput.checked = false;
+  if (resetUnknownTokenAcknowledgement) {
+    els.confirmUnknownTokensInput.checked = false;
+  }
+  syncRecoverButtonState();
 }
 
 async function enforceExpectedChain(publicClient) {
@@ -262,8 +280,13 @@ function resolveProfile(chainId) {
     throw new Error(`No profile for chain ${chainId}. Add it in profiles.js`);
   }
 
-  if (!profile.controller || !profile.cadmosToken) {
-    throw new Error(`Profile for chain ${chainId} is missing controller/cadmosToken in profiles.js`);
+  if (!profile.controller || !profile.controllerCodeHash || !profile.cadmosToken) {
+    throw new Error(
+      `Profile for chain ${chainId} is missing controller/controllerCodeHash/cadmosToken in profiles.js`,
+    );
+  }
+  if (!/^0x[0-9a-fA-F]{64}$/.test(profile.controllerCodeHash)) {
+    throw new Error(`Profile for chain ${chainId} has an invalid controllerCodeHash`);
   }
 
   const controller = parseAddress("Profile controller", profile.controller);
@@ -276,6 +299,7 @@ function resolveProfile(chainId) {
   return {
     chainName: profile.chainName || `Chain ${chainId}`,
     controller,
+    controllerCodeHash: profile.controllerCodeHash.toLowerCase(),
     cadmosToken,
     knownTokens,
   };
@@ -284,6 +308,7 @@ function resolveProfile(chainId) {
 function applyProfileToUI() {
   if (!state.profile) {
     els.controllerInput.value = "";
+    els.controllerCodeHashInput.value = "";
     els.cadmosInput.value = "";
     els.knownTokensView.value = "";
     els.profileBadge.textContent = "Profile: Not loaded";
@@ -291,6 +316,7 @@ function applyProfileToUI() {
   }
 
   els.controllerInput.value = state.profile.controller;
+  els.controllerCodeHashInput.value = state.profile.controllerCodeHash;
   els.cadmosInput.value = state.profile.cadmosToken;
   els.knownTokensView.value = state.profile.knownTokens.length
     ? state.profile.knownTokens.map((t) => `${t.symbol}: ${t.address}`).join("\n")
@@ -368,7 +394,7 @@ async function connectWallet() {
   state.account = getAddress(account);
   state.chainId = chainId;
   state.profile = resolveProfile(chainId);
-  clearPlanState();
+  invalidatePlanReview({ resetUnknownTokenAcknowledgement: true });
 
   els.signatoryInput.value = state.account;
   els.walletBadge.textContent = `Connected: ${state.account.slice(0, 6)}...${state.account.slice(-4)}`;
@@ -396,6 +422,9 @@ async function buildUnsignedPlan() {
 
   const wallet = parseAddress("Cadmos wallet", els.walletInput.value.trim());
   const signatory = parseAddress("Signatory", els.signatoryInput.value.trim());
+  if (signatory.toLowerCase() !== state.account.toLowerCase()) {
+    throw new Error("Connected wallet and recovery signatory do not match.");
+  }
   const destination = signatory;
 
   const deadlineSeconds = BigInt(els.deadlineInput.value || "3600");
@@ -421,6 +450,17 @@ async function buildUnsignedPlan() {
   for (const [token] of manualOverrides.entries()) {
     if (!tokenSet.has(token)) tokenSet.set(token, "MANUAL");
   }
+
+  const hasUserSuppliedTokens = [...tokenSet.values()].some(
+    (source) => source === "EXTRA" || source === "MANUAL",
+  );
+  const contractChecks = await verifyRecoveryContracts(publicClient, {
+    wallet,
+    controller: state.profile.controller,
+    controllerCodeHash: state.profile.controllerCodeHash,
+    cadmosToken: state.profile.cadmosToken,
+    tokens: [...tokenSet.keys()],
+  });
 
   const currentNonce = await requiredRead("UserWallet nonce", () =>
     publicClient.readContract({
@@ -453,6 +493,7 @@ async function buildUnsignedPlan() {
 
   if (withdrawAssets > 0n) {
     calls.push({
+      kind: "vault-withdraw",
       target: state.profile.cadmosToken,
       data: encodeFunctionData({
         abi: cadmosAbi,
@@ -461,6 +502,12 @@ async function buildUnsignedPlan() {
       }),
       deadline,
       note: `cadmos.withdraw assets=${withdrawAssets}`,
+      verification: {
+        metric: "max-withdraw",
+        contract: state.profile.cadmosToken,
+        observedBefore: maxWithdraw,
+        minimumDecrease: withdrawAssets,
+      },
     });
     notes.push(`cadmos.withdraw assets=${withdrawAssets}`);
   }
@@ -479,6 +526,7 @@ async function buildUnsignedPlan() {
 
     if (maxRedeem > 0n) {
       calls.push({
+        kind: "vault-redeem",
         target: state.profile.cadmosToken,
         data: encodeFunctionData({
           abi: cadmosAbi,
@@ -487,6 +535,12 @@ async function buildUnsignedPlan() {
         }),
         deadline,
         note: `cadmos.redeem shares=${maxRedeem} (fallback)`,
+        verification: {
+          metric: "max-redeem",
+          contract: state.profile.cadmosToken,
+          observedBefore: maxRedeem,
+          minimumDecrease: maxRedeem,
+        },
       });
       notes.push(`cadmos.redeem shares=${maxRedeem} fallback`);
     }
@@ -505,11 +559,15 @@ async function buildUnsignedPlan() {
     );
 
     const override = manualOverrides.get(token);
-    const amount = mode === "manual" && override !== undefined ? min(balance, override) : balance;
+    const amount =
+      mode === "manual" && override !== undefined
+        ? min(balance, override)
+        : balance;
 
     if (amount === 0n) continue;
 
     calls.push({
+      kind: "erc20-transfer",
       target: token,
       data: encodeFunctionData({
         abi: erc20Abi,
@@ -518,6 +576,13 @@ async function buildUnsignedPlan() {
       }),
       deadline,
       note: `token.transfer token=${token} amount=${amount} source=${source}`,
+      source,
+      verification: {
+        metric: "erc20-balance",
+        contract: token,
+        observedBefore: balance,
+        minimumDecrease: amount,
+      },
     });
     notes.push(`token.transfer token=${token} amount=${amount}`);
   }
@@ -535,6 +600,9 @@ async function buildUnsignedPlan() {
     mode,
     continueOnFailure: els.continueOnFailureInput.checked,
     controller: state.profile.controller,
+    controllerCodeHash: state.profile.controllerCodeHash,
+    contractChecks,
+    hasUserSuppliedTokens,
     chainId: state.chainId,
     calls,
     notes,
@@ -547,6 +615,8 @@ function renderPlanPreview(plan) {
   const preview = {
     chainId: plan.chainId,
     controller: plan.controller,
+    controllerCodeHash: plan.controllerCodeHash,
+    contractChecks: plan.contractChecks,
     wallet: plan.wallet,
     destination: plan.destination,
     continueOnFailure: plan.continueOnFailure,
@@ -554,13 +624,18 @@ function renderPlanPreview(plan) {
     walletNonce: plan.currentNonce.toString(),
     callCount: plan.calls.length,
     callPlanNotes: plan.notes,
+    requiresUnknownTokenAcknowledgement: plan.hasUserSuppliedTokens,
   };
 
   const reviewHeader =
     `Review before recovering:\n` +
     `Network: ${plan.chainId}\n` +
     `Destination: ${plan.destination}\n` +
-    `Steps: ${plan.calls.length}\n\n`;
+    `Steps: ${plan.calls.length}\n` +
+    (plan.hasUserSuppliedTokens
+      ? "Warning: this plan contains manually supplied token contracts. The separate acknowledgement is required before recovery.\n"
+      : "") +
+    "\n";
 
   setOutput(reviewHeader + JSON.stringify(preview, bigintReplacer, 2));
 }
@@ -577,11 +652,68 @@ async function exportUnsignedPlan() {
   return createUnsignedRecoveryPlan(plan);
 }
 
+async function readOperationMetric(publicClient, wallet, verification) {
+  if (verification.metric === "erc20-balance") {
+    return publicClient.readContract({
+      address: verification.contract,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [wallet],
+    });
+  }
+
+  if (verification.metric === "max-withdraw") {
+    return publicClient.readContract({
+      address: verification.contract,
+      abi: cadmosAbi,
+      functionName: "maxWithdraw",
+      args: [wallet],
+    });
+  }
+
+  if (verification.metric === "max-redeem") {
+    return publicClient.readContract({
+      address: verification.contract,
+      abi: cadmosAbi,
+      functionName: "maxRedeem",
+      args: [wallet],
+    });
+  }
+
+  throw new Error(
+    `Unknown recovery verification metric: ${verification.metric}`,
+  );
+}
+
+async function preflightTargetCall(publicClient, wallet, step) {
+  const result = await requiredVerification(
+    `${step.note} target simulation`,
+    () =>
+      publicClient.call({
+        account: wallet,
+        to: step.target,
+        data: step.data,
+      }),
+    "No signature was requested.",
+  );
+
+  if (step.kind === "erc20-transfer") {
+    return assertErc20TransferSimulation(result.data ?? "0x");
+  }
+
+  return { returnStyle: "contract-specific" };
+}
+
 async function recoverNow() {
   if (!els.confirmReviewInput.checked) {
     throw new Error("Please confirm network and destination before recovering.");
   }
   const plan = await buildUnsignedPlan();
+  if (plan.hasUserSuppliedTokens && !els.confirmUnknownTokensInput.checked) {
+    throw new Error(
+      "Extra or manual token contracts require the separate arbitrary-contract acknowledgement.",
+    );
+  }
   const { publicClient, walletClient } = clients();
   await enforceExpectedChain(publicClient);
 
@@ -589,6 +721,7 @@ async function recoverNow() {
   let cadmosWithdrawSucceeded = false;
 
   for (let i = 0; i < plan.calls.length; i++) {
+    await enforceExpectedChain(publicClient);
     const step = plan.calls[i];
     const selector = (step.data || "").slice(0, 10).toLowerCase();
     const isCadmosCall =
@@ -603,6 +736,37 @@ async function recoverNow() {
         skipped: true,
         reason: "Skipped redeem fallback because withdraw already succeeded.",
       });
+      continue;
+    }
+
+    let liveVerification;
+    let targetSimulation;
+    try {
+      const observedBefore = await requiredVerification(
+        `${step.note} pre-execution state read`,
+        () => readOperationMetric(publicClient, plan.wallet, step.verification),
+        "No signature was requested.",
+      );
+      liveVerification = {
+        ...step.verification,
+        observedBefore,
+      };
+      targetSimulation = await preflightTargetCall(
+        publicClient,
+        plan.wallet,
+        step,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      results.push({
+        step: i,
+        note: step.note,
+        phase: "target-preflight",
+        passed: false,
+        error: message,
+        signatureRequested: false,
+      });
+      if (!plan.continueOnFailure) break;
       continue;
     }
 
@@ -658,17 +822,29 @@ async function recoverNow() {
       },
     ];
 
+    const signedSimulation = await requiredVerification(
+      `${step.note} signed Smart Account simulation`,
+      () =>
+        publicClient.simulateContract({
+          account: state.account,
+          address: plan.controller,
+          abi: controllerAbi,
+          functionName: "executeSignedCalls",
+          args: [plan.wallet, callTuple, false],
+        }),
+      "The signed operation was not broadcast.",
+    );
+    const simulatedCall = assertSingleCallSimulation(signedSimulation.result);
+    await enforceExpectedChain(publicClient);
     const hash = await walletClient.writeContract({
-      account: state.account,
-      address: plan.controller,
-      abi: controllerAbi,
-      functionName: "executeSignedCalls",
-      args: [plan.wallet, callTuple, true],
+      ...signedSimulation.request,
+      chain: ARBITRUM_CHAIN,
     });
 
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
-    let callSuccess = receipt.status === "success";
+    let eventFound = false;
+    let eventSuccess = false;
     let returnData = "0x";
 
     for (const log of receipt.logs) {
@@ -679,12 +855,51 @@ async function recoverNow() {
           data: log.data,
           topics: log.topics,
         });
-        if (decoded.eventName === "WalletCallExecuted") {
-          callSuccess = Boolean(decoded.args.success);
+        if (
+          decoded.eventName === "WalletCallExecuted" &&
+          decoded.args.index === 0n &&
+          decoded.args.wallet.toLowerCase() === plan.wallet.toLowerCase() &&
+          decoded.args.target.toLowerCase() === step.target.toLowerCase()
+        ) {
+          eventFound = true;
+          eventSuccess = Boolean(decoded.args.success);
           returnData = decoded.args.returnData || "0x";
         }
       } catch {
         continue;
+      }
+    }
+
+    let callSuccess =
+      receipt.status === "success" && eventFound && eventSuccess;
+    let postcondition = null;
+    let verificationError = null;
+
+    if (!eventFound && receipt.status === "success") {
+      verificationError =
+        "RecoveryController success event was not found for the exact wallet and target.";
+    }
+
+    if (callSuccess) {
+      try {
+        const observedAfter = await requiredVerification(
+          `${step.note} post-execution state read`,
+          () => readOperationMetric(publicClient, plan.wallet, liveVerification),
+          "The transaction was submitted, but automated verification could not finish.",
+        );
+        postcondition = evaluateOperationPostcondition(
+          liveVerification,
+          observedAfter,
+        );
+        if (!postcondition.verified) {
+          callSuccess = false;
+          verificationError =
+            "The expected wallet balance or vault-state decrease was not observed.";
+        }
+      } catch (error) {
+        callSuccess = false;
+        verificationError =
+          error instanceof Error ? error.message : String(error);
       }
     }
 
@@ -695,14 +910,19 @@ async function recoverNow() {
       txHash: hash,
       txStatus: receipt.status,
       callSuccess,
+      eventFound,
       returnData,
+      targetSimulation,
+      simulatedReturnData: simulatedCall.returnData,
+      postcondition,
+      verificationError,
     });
 
     if (isCadmosCall && selector === SELECTOR_WITHDRAW && callSuccess) {
       cadmosWithdrawSucceeded = true;
     }
 
-    if (!callSuccess && !plan.continueOnFailure) {
+    if (verificationError || (!callSuccess && !plan.continueOnFailure)) {
       break;
     }
   }
@@ -715,12 +935,13 @@ async function recoverNow() {
         destination: plan.destination,
         continueOnFailure: plan.continueOnFailure,
         totalSteps: plan.calls.length,
-        executedSteps: results.length,
+        processedSteps: results.length,
+        submittedSteps: results.filter((result) => Boolean(result.txHash)).length,
         results,
       },
-      null,
-      2
-    )
+      bigintReplacer,
+      2,
+    ),
   );
 }
 
@@ -781,10 +1002,20 @@ function bindPersistence() {
     els.cadmosManualAmountInput,
     els.tokenOverridesInput,
   ];
+  const unknownTokenFields = new Set([
+    els.extraTokensInput,
+    els.tokenOverridesInput,
+  ]);
 
   for (const field of fields) {
-    field.addEventListener("change", persistInputs);
-    field.addEventListener("input", persistInputs);
+    const handleChange = () => {
+      persistInputs();
+      invalidatePlanReview({
+        resetUnknownTokenAcknowledgement: unknownTokenFields.has(field),
+      });
+    };
+    field.addEventListener("change", handleChange);
+    field.addEventListener("input", handleChange);
   }
 }
 
@@ -795,7 +1026,6 @@ syncRecoverButtonState();
 
 els.modeInput.addEventListener("change", () => {
   toggleManualSection();
-  persistInputs();
 });
 els.confirmReviewInput.addEventListener("change", syncRecoverButtonState);
 
@@ -815,7 +1045,7 @@ if (window.ethereum?.on) {
       state.chainId = null;
     }
 
-    clearPlanState();
+    invalidatePlanReview({ resetUnknownTokenAcknowledgement: true });
     if (state.chainId === DEFAULT_CHAIN_ID) {
       try {
         state.profile = resolveProfile(state.chainId);
@@ -835,7 +1065,7 @@ if (window.ethereum?.on) {
   });
 
   window.ethereum.on("accountsChanged", (accounts) => {
-    clearPlanState();
+    invalidatePlanReview({ resetUnknownTokenAcknowledgement: true });
     if (!accounts || accounts.length === 0) {
       state.account = null;
       state.chainId = null;

@@ -57,6 +57,10 @@
             Cadmos Token/Vault (from profile - verify before signing)
             <input id="cadmosInput" readonly />
           </label>
+          <label>
+            Expected RecoveryController runtime code hash
+            <input id="controllerCodeHashInput" readonly />
+          </label>
         </div>
         <p class="warning-text">If these addresses look unfamiliar or do not match your expected network, do not proceed.</p>
         <label>
@@ -104,6 +108,11 @@
           <textarea id="extraTokensInput" rows="4" placeholder="0xTokenA\n0xTokenB"></textarea>
         </label>
 
+        <label class="inline caution-confirmation">
+          I understand that extra or manually entered token addresses are arbitrary contracts and have verified each address independently.
+          <input id="confirmUnknownTokensInput" type="checkbox" />
+        </label>
+
         <div id="manualSection" class="hidden-section">
           <div class="grid two-col">
             <label>
@@ -149,6 +158,6 @@ Only proceed if everything looks correct.</pre>
       </section>
     </main>
 
-    <script type="module" src="./assets/app-GBS556OW.js"></script>
+    <script type="module" src="./assets/app-CC6VAHWT.js"></script>
   </body>
 </html>

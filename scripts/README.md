@@ -19,7 +19,10 @@ cp scripts/recovery-config.example.json scripts/recovery-config.json
 ```
 
 The configuration contains the RPC URL, chain ID, wallet, signatory, controller,
-Cadmos vault, and token addresses. Do not add a private key or seed phrase.
+pinned controller runtime code hash, Cadmos vault, and token addresses. The example
+already contains the Arbitrum production protocol values; replace only the example
+wallet/signatory and adjust the token list if needed. Do not add a private key or
+seed phrase.
 
 ## Generate a Plan
 
@@ -45,6 +48,9 @@ inspect the newly generated `operations` list before selecting an index.
 - If the wallet nonce, vault state, or balances change, discard the old output.
 - Any RPC, nonce, vault, or token read failure aborts generation. A read failure is
   never converted into a zero balance.
+- Generation aborts unless the RecoveryController bytecode matches the pinned
+  production runtime hash and every configured wallet/vault/token address contains
+  contract code.
 - Use the recovery web UI for the normal stepwise signing and submission flow.
 
 ## Modes
