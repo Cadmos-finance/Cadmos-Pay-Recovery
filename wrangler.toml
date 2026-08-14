@@ -9,3 +9,6 @@
   [assets]
   directory = "./dist"
   binding = "ASSETS"
+  # Without this, Cloudflare serves matching assets directly and worker.js only runs on
+  # the not-found path, publishing the recovery page without its security headers.
+  run_worker_first = true

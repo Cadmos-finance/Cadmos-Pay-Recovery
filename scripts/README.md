@@ -1,3 +1,11 @@
+# Recovery Scripts
+
+- `generateRecoveryPlan.mjs` — secret-free unsigned recovery planner.
+- `checkDeployedSecurity.mjs` — post-deployment check of the live security headers.
+- `buildFrontend.mjs` — reproducible frontend bundler.
+
+---
+
 # Unsigned Recovery Planner
 
 `generateRecoveryPlan.mjs` inspects live wallet/vault/token state and emits a
@@ -59,3 +67,24 @@ inspect the newly generated `operations` list before selecting an index.
   vault redeem fallback.
 - `"mode": "withAmounts"` applies `cadmosAssetAmount` and `tokenAmounts` caps while
   still reading and validating the live balances.
+
+---
+
+# Deployed Security Check
+
+`checkDeployedSecurity.mjs` fetches the live recovery site and compares each response
+against the exact policy in `worker.js`. It reads no secrets and sends no wallet data.
+
+```bash
+npm run check:deployment
+npm run check:deployment -- https://staging.example.invalid
+```
+
+It checks the page, `build-manifest.json`, the content-hashed bundle from
+`dist/build-manifest.json`, the stylesheet, and a not-found path, then exits non-zero if
+any response is missing a security header or carries the wrong `Cache-Control`.
+
+Run it after every deployment. A passing `npm test` only proves the policy is correct in
+source; if Cloudflare serves assets without invoking `worker.js`, the unit tests stay
+green while users receive an unhardened page. That failure mode is what this script
+detects.
