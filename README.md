@@ -65,6 +65,10 @@ bundle. `dist/build-manifest.json` records the bundle path, SHA-256 digest, and 
 `viem` version. Commit the generated `dist/` files with every frontend release so the
 static deployment always has a reviewed artifact.
 
+The Cloudflare Worker applies the recovery Content Security Policy and the remaining
+browser security headers in code. HTML and the build manifest use `no-store`; only
+content-hashed assets receive immutable caching.
+
 ---
 
 ## Quick Start (Script)
@@ -130,6 +134,10 @@ npm test
 forge test
 ```
 
+Pull requests and changes to `master` run these checks in GitHub Actions. CI also
+audits dependencies, verifies that rebuilding does not change the committed `dist/`
+artifact, and reviews dependency changes introduced by pull requests.
+
 ---
 
 Current coverage focus:
@@ -157,6 +165,8 @@ Current coverage focus:
 - Plan exports are unsigned. The UI signs and submits one live-nonce operation at a time.
 
 - Vault and token read failures block recovery planning instead of being treated as zero balances.
+
+- Security headers and cache policy are defined in `worker.js` and covered by automated tests.
 
 ---
 
