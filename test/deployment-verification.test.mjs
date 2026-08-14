@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
+  deployedBundleFailures,
+  deployedPageFailures,
   evaluateDeployedResponse,
   summarizeDeploymentChecks,
 } from "../shared/deploymentVerification.mjs";
@@ -151,4 +154,90 @@ test("an empty check list never reports success", () => {
 
   assert.equal(summary.ok, false);
   assert.equal(summary.checked, 0);
+});
+
+const REVIEWED_BUNDLE = Buffer.from("console.log('reviewed bundle');\n");
+const REVIEWED_MANIFEST = {
+  bundle: "assets/app-CC6VAHWT.js",
+  sha256: createHash("sha256").update(REVIEWED_BUNDLE).digest("hex"),
+};
+
+function reviewedPage(bundle = REVIEWED_MANIFEST.bundle) {
+  return [
+    "<!doctype html>",
+    '<html lang="en"><head>',
+    '<link rel="stylesheet" href="./styles.css" />',
+    `<script type="module" src="./${bundle}"></script>`,
+    "</head><body></body></html>",
+  ].join("\n");
+}
+
+test("the deployed bundle matching the reviewed digest reports no failure", () => {
+  const failures = deployedBundleFailures(REVIEWED_MANIFEST, REVIEWED_BUNDLE);
+
+  assert.deepEqual(failures, []);
+});
+
+test("a substituted bundle is rejected against the reviewed digest", () => {
+  const tampered = Buffer.concat([REVIEWED_BUNDLE, Buffer.from("//evil\n")]);
+
+  const failures = deployedBundleFailures(REVIEWED_MANIFEST, tampered);
+
+  assert.equal(failures.length, 1);
+  assert.ok(failures[0].startsWith("sha256:"));
+  assert.ok(failures[0].includes(REVIEWED_MANIFEST.sha256));
+  assert.ok(
+    failures[0].includes(createHash("sha256").update(tampered).digest("hex")),
+    "the failure must report the digest that was actually served",
+  );
+});
+
+test("the deployed page loading the reviewed bundle reports no failure", () => {
+  const failures = deployedPageFailures(REVIEWED_MANIFEST, reviewedPage());
+
+  assert.deepEqual(failures, []);
+});
+
+test("a page pointing at a different bundle is rejected", () => {
+  const failures = deployedPageFailures(
+    REVIEWED_MANIFEST,
+    reviewedPage("assets/app-DIFFERENT.js"),
+  );
+
+  assert.equal(failures.length, 1);
+  assert.ok(failures[0].startsWith("bundle reference:"));
+  assert.ok(failures[0].includes(REVIEWED_MANIFEST.bundle));
+});
+
+test("a page loading a cross-origin resource is rejected", () => {
+  const injected = reviewedPage().replace(
+    "</head>",
+    '<script src="https://cdn.example.invalid/tracker.js"></script></head>',
+  );
+
+  const failures = deployedPageFailures(REVIEWED_MANIFEST, injected);
+
+  assert.ok(
+    failures.some(
+      (failure) =>
+        failure.startsWith("cross-origin resource:") &&
+        failure.includes("https://cdn.example.invalid/tracker.js"),
+    ),
+    `expected a cross-origin failure, received ${JSON.stringify(failures)}`,
+  );
+});
+
+test("content failures are reported alongside header failures for one URL", async () => {
+  const request = new Request(`${BASE_URL}/assets/app-CC6VAHWT.js`);
+  const response = await worker.fetch(
+    request,
+    assetEnvironment({ contentType: "text/javascript" }),
+  );
+
+  const result = evaluateDeployedResponse(request, response, [
+    'sha256: expected "abc", received "def"',
+  ]);
+
+  assert.equal(result.passed, false);
+  assert.deepEqual(result.failures, ['sha256: expected "abc", received "def"']);
 });
