@@ -82,7 +82,13 @@ npm run check:deployment -- https://staging.example.invalid
 
 It checks the page, `build-manifest.json`, the content-hashed bundle from
 `dist/build-manifest.json`, the stylesheet, and a not-found path, then exits non-zero if
-any response is missing a security header or carries the wrong `Cache-Control`.
+any response is missing a security header, carries the wrong `Cache-Control`, delivers a
+bundle whose SHA-256 differs from the reviewed manifest digest, or serves a page that
+loads a different bundle or any cross-origin resource.
+
+Headers alone are not enough. A correct Content Security Policy on a substituted bundle
+still executes the substituted code, so the digest comparison is what ties the delivered
+bytes to the build that was reviewed and committed.
 
 Run it after every deployment. A passing `npm test` only proves the policy is correct in
 source; if Cloudflare serves assets without invoking `worker.js`, the unit tests stay

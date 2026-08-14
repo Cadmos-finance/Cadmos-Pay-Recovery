@@ -102,8 +102,10 @@ npm run check:deployment
 
 The check reads `dist/build-manifest.json`, requests the page, manifest, content-hashed
 bundle, stylesheet, and a not-found path, and fails if any response is missing a security
-header or carries the wrong cache policy. It defaults to the production host and accepts
-an alternative base URL as its first argument. `.github/workflows/deployment-check.yml`
+header, carries the wrong cache policy, delivers a bundle whose SHA-256 differs from the
+reviewed manifest digest, or serves a page that loads anything other than the reviewed
+bundle. It defaults to the production host and accepts an alternative base URL as its
+first argument. `.github/workflows/deployment-check.yml`
 runs the same check daily and on demand. It is deliberately excluded from `npm test` so
 pull-request CI stays hermetic.
 
