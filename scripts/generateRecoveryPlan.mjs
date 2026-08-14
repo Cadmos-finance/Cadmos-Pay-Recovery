@@ -13,6 +13,7 @@ import {
   createUnsignedRecoveryPlan,
   requiredRead,
 } from "../shared/recoveryPlanning.mjs";
+import { verifyRecoveryContracts } from "../shared/recoveryVerification.mjs";
 
 const userWalletAbi = parseAbi(["function nonce() view returns (uint256)"]);
 const erc20Abi = parseAbi([
@@ -25,12 +26,17 @@ const cadmosAbi = parseAbi([
   "function withdraw(uint256 assets, address receiver, address owner) returns (uint256)",
   "function redeem(uint256 shares, address receiver, address owner) returns (uint256)",
 ]);
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 function parseAddress(label, value) {
   if (typeof value !== "string" || !isAddress(value)) {
     throw new Error(`${label} is not a valid address`);
   }
-  return getAddress(value);
+  const normalized = getAddress(value);
+  if (normalized === ZERO_ADDRESS) {
+    throw new Error(`${label} cannot be the zero address`);
+  }
+  return normalized;
 }
 
 function parseBigInt(value, fallback = 0n) {
@@ -38,6 +44,13 @@ function parseBigInt(value, fallback = 0n) {
   const parsed = BigInt(value);
   if (parsed < 0n) throw new Error("Recovery amounts cannot be negative");
   return parsed;
+}
+
+function parseCodeHash(label, value) {
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(value)) {
+    throw new Error(`${label} must be a 32-byte 0x-prefixed hash`);
+  }
+  return value.toLowerCase();
 }
 
 function min(a, b) {
@@ -95,6 +108,10 @@ async function loadConfig(configPath) {
     wallet: parseAddress("wallet", raw.wallet),
     signatory: parseAddress("signatory", raw.signatory),
     controller: parseAddress("controller", raw.controller),
+    controllerCodeHash: parseCodeHash(
+      "controllerCodeHash",
+      raw.controllerCodeHash,
+    ),
     cadmosToken: parseAddress("cadmosToken", raw.cadmosToken),
     tokens: raw.tokens.map((token, index) =>
       parseAddress(`tokens[${index}]`, token),
@@ -113,6 +130,14 @@ async function buildPlan(config) {
   if (chainId !== config.chainId) {
     throw new Error(`Wrong network: expected chain ${config.chainId}, RPC returned ${chainId}`);
   }
+
+  const contractChecks = await verifyRecoveryContracts(publicClient, {
+    wallet: config.wallet,
+    controller: config.controller,
+    controllerCodeHash: config.controllerCodeHash,
+    cadmosToken: config.cadmosToken,
+    tokens: config.tokens,
+  });
 
   const currentNonce = await requiredRead("UserWallet nonce", () =>
     publicClient.readContract({
@@ -141,6 +166,7 @@ async function buildPlan(config) {
 
   if (withdrawAssets > 0n) {
     calls.push({
+      kind: "vault-withdraw",
       target: config.cadmosToken,
       data: encodeFunctionData({
         abi: cadmosAbi,
@@ -149,6 +175,12 @@ async function buildPlan(config) {
       }),
       deadline,
       note: `cadmos.withdraw assets=${withdrawAssets}`,
+      verification: {
+        metric: "max-withdraw",
+        contract: config.cadmosToken,
+        observedBefore: maxWithdraw,
+        minimumDecrease: withdrawAssets,
+      },
     });
   }
 
@@ -164,6 +196,7 @@ async function buildPlan(config) {
 
     if (maxRedeem > 0n) {
       calls.push({
+        kind: "vault-redeem",
         target: config.cadmosToken,
         data: encodeFunctionData({
           abi: cadmosAbi,
@@ -172,6 +205,12 @@ async function buildPlan(config) {
         }),
         deadline,
         note: `cadmos.redeem shares=${maxRedeem} (fallback only)`,
+        verification: {
+          metric: "max-redeem",
+          contract: config.cadmosToken,
+          observedBefore: maxRedeem,
+          minimumDecrease: maxRedeem,
+        },
       });
     }
   }
@@ -192,6 +231,7 @@ async function buildPlan(config) {
 
     if (transferAmount > 0n) {
       calls.push({
+        kind: "erc20-transfer",
         target: token,
         data: encodeFunctionData({
           abi: erc20Abi,
@@ -200,6 +240,13 @@ async function buildPlan(config) {
         }),
         deadline,
         note: `token.transfer token=${token} amount=${transferAmount}`,
+        source: "config",
+        verification: {
+          metric: "erc20-balance",
+          contract: token,
+          observedBefore: balance,
+          minimumDecrease: transferAmount,
+        },
       });
     }
   }
@@ -207,6 +254,8 @@ async function buildPlan(config) {
   return {
     chainId,
     controller: config.controller,
+    controllerCodeHash: config.controllerCodeHash,
+    contractChecks,
     wallet: config.wallet,
     signatory: config.signatory,
     destination,

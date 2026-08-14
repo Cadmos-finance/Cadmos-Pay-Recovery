@@ -22,6 +22,7 @@ This repo contains:
 **Arbitrum One (Chain ID: 42161)**
 
 - **RecoveryController:** `0xEd092dE12cD5c2CbfDE051b42Fad5d27567DF01d`
+- **RecoveryController runtime code hash:** `0x7f48f74ed39fe889bbb83c7b6a2244cc8e3d7a0cb370fd1c3b32b215d6bbb62e`
 
 > Always verify you are on the correct chain before signing or broadcasting transactions.
 
@@ -46,6 +47,7 @@ npm ci
 
 2. Configure addresses in `frontend/profiles.js`:
    - `controller`
+   - `controllerCodeHash`
    - `cadmosToken`
    - `knownTokens`
 
@@ -58,6 +60,23 @@ npm run serve
 4. Open http://localhost:8080.
 
 Follow the on-page checklist and review the plan output before executing.
+
+Before a plan is shown, the UI verifies that the deployed RecoveryController
+runtime bytecode matches the pinned production hash and that the Smart Account,
+vault, and configured token addresses contain contract code. Manually supplied token
+contracts require a separate acknowledgement.
+
+For each operation, **Recover Now**:
+
+1. reads the relevant live balance or vault metric;
+2. simulates the exact target call from the Smart Account before requesting a signature;
+3. signs one operation at the live nonce;
+4. simulates the exact signed `executeSignedCalls` request with fail-fast behavior;
+5. broadcasts that simulated request; and
+6. requires the matching controller event and expected post-transaction state decrease.
+
+The deployed Smart Account is treated as a black box: the signed controller simulation
+checks its current authorization behavior without requiring its source in this repository.
 
 The production page does not load JavaScript, styles, or fonts from third parties.
 `viem` is installed from the pinned lockfile and compiled into a content-hashed local
@@ -93,9 +112,11 @@ cp scripts/recovery-config.example.json scripts/recovery-config.json
 npm run generate -- ./scripts/recovery-config.json --step 0
 ```
 
-The CLI never signs or broadcasts. Sign `nextStep.typedData` with a trusted external
-or hardware wallet, submit only that operation, then regenerate before the next step.
-Any failed RPC, nonce, vault, or token read aborts plan generation.
+The CLI never signs or broadcasts. It verifies the same pinned controller runtime hash
+and requires code at every configured contract address before generating a plan. Sign
+`nextStep.typedData` with a trusted external or hardware wallet, submit only that
+operation, then regenerate before the next step. Any failed RPC, nonce, vault, or token
+read aborts plan generation.
 
 ---
 
@@ -165,6 +186,14 @@ Current coverage focus:
 - Plan exports are unsigned. The UI signs and submits one live-nonce operation at a time.
 
 - Vault and token read failures block recovery planning instead of being treated as zero balances.
+
+- The production RecoveryController runtime bytecode must match the pinned hash before planning.
+
+- Target simulation happens before signing; exact signed-call simulation happens before broadcast.
+
+- A matching controller event and balance/vault-state decrease are required after submission.
+
+- Manually supplied token contracts require a fresh acknowledgement after their inputs change.
 
 - Security headers and cache policy are defined in `worker.js` and covered by automated tests.
 

@@ -43,13 +43,30 @@ export function createUnsignedRecoveryPlan(plan, selectedOperation = 0) {
     );
   }
 
+  const controllerIdentity = plan.contractChecks?.controller;
+  if (
+    !/^0x[0-9a-fA-F]{64}$/.test(plan.controllerCodeHash ?? "") ||
+    controllerIdentity?.pinned !== true ||
+    controllerIdentity.address?.toLowerCase() !==
+      plan.controller?.toLowerCase() ||
+    controllerIdentity.codeHash?.toLowerCase() !==
+      plan.controllerCodeHash.toLowerCase()
+  ) {
+    throw new Error(
+      "Cannot export a recovery plan without a verified, pinned RecoveryController identity",
+    );
+  }
+
   const operations = plan.calls.map((call, index) => ({
     index,
+    kind: call.kind,
     target: call.target,
     value: 0n,
     data: call.data,
     deadline: call.deadline,
     note: call.note,
+    source: call.source,
+    verification: call.verification,
   }));
   const operation = operations[selectedOperation];
   const typedData = {
@@ -75,6 +92,8 @@ export function createUnsignedRecoveryPlan(plan, selectedOperation = 0) {
     unsigned: true,
     chainId: plan.chainId,
     controller: plan.controller,
+    controllerCodeHash: plan.controllerCodeHash,
+    contractChecks: plan.contractChecks,
     wallet: plan.wallet,
     signatory: plan.signatory,
     destination: plan.destination,
@@ -90,6 +109,7 @@ export function createUnsignedRecoveryPlan(plan, selectedOperation = 0) {
     warnings: [
       "This file is unsigned and cannot move funds.",
       "Only nextStep is bound to the current live wallet nonce.",
+      "The RecoveryController runtime code matched the pinned production code hash when this plan was generated.",
       "Sign and submit only nextStep, then regenerate the plan before any later operation.",
       "If a read, signature, or transaction fails, do not reuse this plan.",
     ],

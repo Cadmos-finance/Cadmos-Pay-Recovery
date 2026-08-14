@@ -146,6 +146,12 @@ label.inline {
   background: #fbfaf5;
 }
 
+label.caution-confirmation {
+  border-color: #e2a58f;
+  background: #fff4ef;
+  color: #7a2f1d;
+}
+
 .help {
   margin: 0;
   font-size: 12px;
