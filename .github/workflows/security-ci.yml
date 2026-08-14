@@ -1,0 +1,53 @@
+name: Security CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Frontend, contracts, and reproducible build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate --registry=https://registry.npmjs.org
+
+      - name: Test and build frontend
+        run: npm test
+
+      - name: Verify reproducible frontend artifact
+        run: |
+          cp -R dist /tmp/cadmos-recovery-dist-first
+          npm run build:frontend
+          diff -ru /tmp/cadmos-recovery-dist-first dist
+          git diff --exit-code -- dist
+
+      - name: Set up Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1
+        with:
+          version: v1.7.1
+
+      - name: Test contracts
+        run: forge test

@@ -114,6 +114,10 @@ and emits a content-hashed script plus its SHA-256 digest in
 `dist/build-manifest.json`. The production page must not load third-party executable,
 style, or font resources.
 
+The Cloudflare Worker must remain the source of truth for CSP and the other browser
+security headers. Do not rely on dashboard-only header rules: `npm test` verifies the
+policy encoded in `worker.js`.
+
 ---
 
 ## Run Locally
